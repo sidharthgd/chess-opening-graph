@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900&display=swap"
+        rel="stylesheet">
+    <title>Chess Openings Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: linear-gradient(to right, #F0F0F0, #dedcdc);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .bubble {
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-family: 'Fira Sans', sans-serif;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 1s ease;
+            transform-origin: center center;
+        }
+
+        /* Only apply hover scale when not in expanded view */
+        body:not(.expanded-view) .bubble:hover {
+            transform: scale(1.1);
+        }
+
+        .fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .move-to-center {
+            transition: all 1s ease;
+            position: fixed;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) scale(1.5);
+            z-index: 1000;
+        }
+
+        .variation {
+            position: fixed;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-family: 'Fira Sans', sans-serif;
+            font-size: 1em;
+            background: #888;
+            opacity: 0;
+            transition: all 1s ease;
+            pointer-events: none;
+        }
+
+        .variation.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .close-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background-color: white;
+            color: #888;
+            border: none;
+            border-radius: 50%;
+            font-size: 20px;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 1001;
+            transition: opacity 0.5s ease;
+        }
+
+        .close-button.show {
+            display: flex;
+        }
+
+        .variation.closing {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .connection-line {
+            position: fixed;
+            height: 2px;
+            background-color: rgba(0, 0, 0, 0.3);
+            transform-origin: left center;
+            opacity: 0;
+            transition: opacity 1s ease;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .connection-line.show {
+            opacity: 1;
+        }
+
+        .connection-line.closing {
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bubble" style="background: #FF0000; top: 10%; left: 15%;" onclick="showVariations('Italian')">Italian
+    </div>
+    <div class="bubble" style="background: #009600; top: 10%; left: 35%;" onclick="showVariations('Ruy Lopez')">Ruy
+        Lopez</div>
+    <div class="bubble" style="background: #A020F0; top: 10%; left: 55%;" onclick="showVariations('Sicilian')">Sicilian
+    </div>
+    <div class="bubble" style="background: #FFA500; top: 10%; left: 75%;" onclick="showVariations('Caro Kann')">Caro
+        Kann</div>
+
+    <button class="close-button" onclick="closeView()">X</button>
+
+    <script>
+
+        const openingsData = {
+            "Italian": {
+                "Giuoco Piano": [
+                    "1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5"
+                ],
+                "Evans Gambit": [
+                    "1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4"
+                ]
+            },
+            "Sicilian": {
+                "Najdorf": [
+                    "1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6"
+                ],
+                "Dragon": [
+                    "1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 g6"
+                ]
+            },
+            "Caro Kann": {
+                "Advance Variation": [
+                    "1.e4 c6 2.d4 d5 3.e5"
+                ],
+                "Classical Variation": [
+                    "1.e4 c6 2.d4 d5 3.Nc3"
+                ]
+            },
+            "Ruy Lopez": {
+                "Berlin Defense": [
+                    "1.e4 e5 2.Nf3 Nc6 3.Bb5 Nf6"
+                ],
+                "Open Variation": [
+                    "1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O Nxe4"
+                ]
+            }
+        };
+
+        let originalPositions = [];
+        let currentOpening = null;
+        let connectionLines = [];
+        
+        function calculateLineEndpoints(startX, startY, endX, endY, startRadius, endRadius) {
+            // Calculate the angle between the centers
+            const angle = Math.atan2(endY - startY, endX - startX);
+
+            // Calculate the points on the circumference of each circle
+            const startPointX = startX + startRadius * Math.cos(angle);
+            const startPointY = startY + startRadius * Math.sin(angle);
+
+            // For the end point, we subtract from the end position (opposite direction)
+            const endPointX = endX - endRadius * Math.cos(angle);
+            const endPointY = endY - endRadius * Math.sin(angle);
+
+            return {
+                start: { x: startPointX, y: startPointY },
+                end: { x: endPointX, y: endPointY }
+            };
+        }
+
+        function createConnectionLine(startX, startY, endX, endY) {
+            const line = document.createElement('div');
+            line.className = 'connection-line';
+
+            // Calculate endpoints on the circumference
+            // Main bubble radius is 75px (150px/2), variation bubble radius is 60px (120px/2)
+            const points = calculateLineEndpoints(startX, startY, endX, endY, 75, 60);
+
+            // Calculate line length and angle between the new points
+            const dx = points.end.x - points.start.x;
+            const dy = points.end.y - points.start.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            // Position and rotate line
+            line.style.width = `${length}px`;
+            line.style.left = `${points.start.x}px`;
+            line.style.top = `${points.start.y}px`;
+            line.style.transform = `rotate(${angle}deg)`;
+
+            document.body.appendChild(line);
+            connectionLines.push(line);
+
+            setTimeout(() => line.classList.add('show'), 50);
+
+            return line;
+        }
+
+        function showVariations(opening) {
+            const variations = openingsData[opening];
+            currentOpening = opening;
+
+            if (variations) {
+                document.body.classList.add('expanded-view');
+
+                originalPositions = [];
+                document.querySelectorAll('.bubble').forEach(bubble => {
+                    originalPositions.push({
+                        top: bubble.style.top,
+                        left: bubble.style.left
+                    });
+                    bubble.classList.add('fade-out');
+                });
+
+                const mainBubble = document.querySelector(`.bubble[onclick="showVariations('${opening}')"]`);
+                mainBubble.classList.remove('fade-out');
+                mainBubble.classList.add('move-to-center');
+
+                setTimeout(() => {
+                    let angle = -45;
+                    const radius = 200;
+                    const centerX = window.innerWidth / 2;
+                    const centerY = window.innerHeight / 2;
+
+                    for (const variationName in variations) {
+                        const variationBubble = document.createElement('div');
+                        variationBubble.className = 'bubble variation';
+                        variationBubble.textContent = variationName;
+
+                        const radian = angle * (Math.PI / 180);
+                        const x = centerX + radius * Math.cos(radian);
+                        const y = centerY + radius * Math.sin(radian);
+
+                        variationBubble.style.left = `${x - 60}px`;
+                        variationBubble.style.top = `${y - 60}px`;
+                        variationBubble.onclick = () => alert(`Moves: ${variations[variationName].join(', ')}`);
+                        document.body.appendChild(variationBubble);
+
+                        // Create connection line from center bubble to variation bubble
+                        createConnectionLine(
+                            centerX,
+                            centerY,
+                            x,
+                            y
+                        );
+
+                        setTimeout(() => variationBubble.classList.add('show'), 100);
+                        angle += 90;
+                    }
+
+                    document.querySelector('.close-button').classList.add('show');
+                }, 1000);
+            }
+        }
+
+        function closeView() {
+            // Remove expanded view class
+            document.body.classList.remove('expanded-view');
+
+            // First fade out the close button
+            const closeButton = document.querySelector('.close-button');
+            closeButton.style.opacity = '0';
+
+            // Add closing animation to variations and lines
+            document.querySelectorAll('.variation').forEach(variation => {
+                variation.classList.add('closing');
+            });
+
+            connectionLines.forEach(line => {
+                line.classList.add('closing');
+            });
+
+            // Remove move-to-center from main bubble but keep it visible
+            const mainBubble = document.querySelector(`.bubble[onclick="showVariations('${currentOpening}')"]`);
+            mainBubble.classList.remove('move-to-center');
+
+            // After closing animation
+            setTimeout(() => {
+                // Remove variations and lines
+                document.querySelectorAll('.variation').forEach(variation => {
+                    variation.remove();
+                });
+
+                connectionLines.forEach(line => {
+                    line.remove();
+                });
+                connectionLines = [];
+
+                // Restore all bubbles to original positions
+                document.querySelectorAll('.bubble:not(.variation)').forEach((bubble, index) => {
+                    bubble.style.top = originalPositions[index].top;
+                    bubble.style.left = originalPositions[index].left;
+                    bubble.classList.remove('fade-out');
+                });
+
+                // Reset close button
+                closeButton.classList.remove('show');
+                closeButton.style.opacity = '1';
+                currentOpening = null;
+            }, 1000);
+        }
+    </script>
+</body>
+
+</html>
